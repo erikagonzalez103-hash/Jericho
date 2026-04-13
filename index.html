@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Biff — Eridion Field Ops</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #f5f5f3;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.1);
+    --border-strong: rgba(0,0,0,0.2);
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --text-hint: #999;
+    --blue: #185FA5;
+    --blue-bg: #E6F1FB;
+    --blue-text: #0C447C;
+    --green: #3B6D11;
+    --green-bg: #EAF3DE;
+    --green-text: #27500A;
+    --amber: #854F0B;
+    --amber-bg: #FAEEDA;
+    --amber-text: #633806;
+    --red: #A32D2D;
+    --red-bg: #FCEBEB;
+    --red-text: #791F1F;
+    --gray-bg: #F1EFE8;
+    --gray-text: #444441;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 0.5px solid var(--border);
+    padding: 16px 20px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-top { display: flex; align-items: center; justify-content: space-between; }
+  .header-name { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; }
+  .header-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .refresh-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 0.5px solid var(--border-strong);
+    background: transparent; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--text-muted);
+  }
+  .refresh-btn:active { background: var(--bg); }
+
+  /* Tab bar */
+  .tabs {
+    display: flex; gap: 0;
+    margin-top: 12px;
+    border-bottom: 0.5px solid var(--border);
+  }
+  .tab {
+    flex: 1; padding: 8px 4px; text-align: center;
+    font-size: 13px; font-weight: 500; color: var(--text-muted);
+    border: none; background: transparent; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* Main content */
+  .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+  /* Section */
+  .section-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--text-hint);
+    margin: 20px 0 8px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 16px 10px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  }
+  .card-title { font-size: 15px; font-weight: 500; line-height: 1.3; flex: 1; }
+  .card-sub { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+  .card-body { padding: 0 16px 14px; }
+
+  /* Status badge */
+  .badge {
+    font-size: 11px; font-weight: 500; padding: 3px 8px;
+    border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+  }
+  .badge-blue { background: var(--blue-bg); color: var(--blue-text); }
+  .badge-green { background: var(--green-bg); color: var(--green-text); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber-text); }
+  .badge-red { background: var(--red-bg); color: var(--red-text); }
+  .badge-gray { background: var(--gray-bg); color: var(--gray-text); }
+
+  /* Status color map */
+  .status-Quoting { background: var(--gray-bg); color: var(--gray-text); }
+  .status-Ready-for-Measure { background: var(--blue-bg); color: var(--blue-text); }
+  .status-Measured { background: var(--blue-bg); color: var(--blue-text); }
+  .status-Awaiting-PO { background: var(--amber-bg); color: var(--amber-text); }
+  .status-In-Production { background: var(--amber-bg); color: var(--amber-text); }
+  .status-Ready-for-Install { background: var(--amber-bg); color: var(--amber-text); }
+  .status-Currently-Installing { background: var(--amber-bg); color: var(--amber-text); }
+  .status-Installed-Complete { background: var(--green-bg); color: var(--green-text); }
+  .status-Invoice-sent { background: var(--green-bg); color: var(--green-text); }
+  .status-On-Hold { background: var(--red-bg); color: var(--red-text); }
+  .status-Warranty { background: var(--red-bg); color: var(--red-text); }
+
+  /* Stale alert */
+  .stale-bar {
+    background: var(--amber-bg);
+    border-top: 0.5px solid rgba(186,117,23,0.2);
+    padding: 8px 16px;
+    font-size: 12px; color: var(--amber-text);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stale-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex-shrink: 0; }
+
+  /* Action buttons */
+  .action-row {
+    display: flex; gap: 8px; padding: 0 16px 14px; flex-wrap: wrap;
+  }
+  .action-btn {
+    flex: 1; min-width: 100px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border-strong);
+    background: transparent; color: var(--text);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    text-align: center;
+  }
+  .action-btn:active { background: var(--bg); }
+  .action-btn.primary {
+    background: var(--blue); color: white; border-color: var(--blue);
+  }
+  .action-btn.primary:active { opacity: 0.85; }
+
+  /* Status picker */
+  .status-picker {
+    padding: 12px 16px 14px;
+    border-top: 0.5px solid var(--border);
+    display: none;
+  }
+  .status-picker.open { display: block; }
+  .status-picker-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .status-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .status-option {
+    padding: 9px 10px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border);
+    background: var(--surface); font-size: 12px;
+    cursor: pointer; text-align: center; font-weight: 500;
+  }
+  .status-option:active { opacity: 0.7; }
+
+  /* Note panel */
+  .note-panel {
+    padding: 12px 16px 14px;
+    border-top: 0.5px solid var(--border);
+    display: none;
+  }
+  .note-panel.open { display: block; }
+  .note-panel textarea {
+    width: 100%; border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    font-size: 14px; font-family: inherit; resize: none;
+    background: var(--bg); color: var(--text);
+    min-height: 80px;
+  }
+  .note-panel textarea:focus { outline: none; border-color: var(--blue); }
+  .photo-required {
+    font-size: 12px; color: var(--amber-text);
+    background: var(--amber-bg); padding: 8px 10px;
+    border-radius: var(--radius-sm); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .photo-btn {
+    width: 100%; padding: 10px; margin-top: 8px;
+    border-radius: var(--radius-sm); border: 1.5px dashed var(--border-strong);
+    background: transparent; color: var(--text-muted);
+    font-size: 13px; cursor: pointer; text-align: center;
+  }
+  .photo-btn:active { background: var(--bg); }
+  .photo-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .photo-thumb {
+    width: 64px; height: 64px; border-radius: var(--radius-sm);
+    object-fit: cover; border: 0.5px solid var(--border);
+  }
+  .note-submit {
+    width: 100%; margin-top: 8px; padding: 11px;
+    background: var(--blue); color: white; border: none;
+    border-radius: var(--radius-sm); font-size: 14px;
+    font-weight: 500; cursor: pointer;
+  }
+  .note-submit:active { opacity: 0.85; }
+  .note-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Sub card */
+  .sub-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+  .sub-row + .sub-row { border-top: 0.5px solid var(--border); }
+  .sub-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--blue-bg); color: var(--blue-text);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px; flex-shrink: 0;
+  }
+  .sub-info { flex: 1; min-width: 0; }
+  .sub-name { font-size: 14px; font-weight: 500; }
+  .sub-detail { font-size: 12px; color: var(--text-muted); }
+  .sub-action {
+    padding: 8px 14px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border-strong);
+    background: transparent; font-size: 13px; cursor: pointer;
+    color: var(--text);
+  }
+
+  /* Alert card */
+  .alert-card {
+    background: var(--red-bg); border-color: rgba(163,45,45,0.2);
+  }
+  .alert-card .card-title { color: var(--red-text); }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .spinner {
+    width: 28px; height: 28px; border: 2px solid var(--border);
+    border-top-color: var(--blue); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1a1a1a; color: white; padding: 10px 20px;
+    border-radius: 20px; font-size: 14px; font-weight: 500;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    white-space: nowrap; z-index: 999;
+  }
+  .toast.show { opacity: 1; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 200; display: none; align-items: flex-end;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); width: 100%;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 20px; max-height: 80vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .modal-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+  .modal-close {
+    width: 100%; padding: 12px; margin-top: 12px;
+    border: 0.5px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: transparent; font-size: 15px; cursor: pointer; color: var(--text-muted);
+  }
+
+  /* Divider */
+  .divider { height: 0.5px; background: var(--border); margin: 4px 0; }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111110; --surface: #1c1c1a; --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.2); --text: #f0ede8; --text-muted: #999;
+      --text-hint: #666; --blue: #378ADD; --blue-bg: #042C53; --blue-text: #85B7EB;
+      --green-bg: #173404; --green-text: #97C459; --amber-bg: #412402;
+      --amber-text: #EF9F27; --red-bg: #501313; --red-text: #F09595;
+      --gray-bg: #2C2C2A; --gray-text: #B4B2A9;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="header-name">Biff</div>
+      <div class="header-sub" id="date-line">Loading...</div>
+    </div>
+    <button class="refresh-btn" onclick="loadAll()" title="Refresh">↻</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('brief')">Brief</button>
+    <button class="tab" onclick="switchTab('jobs')">Jobs</button>
+    <button class="tab" onclick="switchTab('subs')">Subs</button>
+  </div>
+</div>
+
+<div class="content">
+  <div id="tab-brief"></div>
+  <div id="tab-jobs" style="display:none"></div>
+  <div id="tab-subs" style="display:none"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="status-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-job-name">Update status</div>
+    <div class="modal-sub">Select new status for this job</div>
+    <div id="modal-status-grid" class="status-grid"></div>
+    <button class="modal-close" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" multiple>
+
+<script>
+const WORKER = 'https://frosty-base-f01e.erikagonzalez103.workers.dev';
+
+const MONDAY_STATUSES = [
+  'Awaiting Readiness','Quoting','Ready for Measure','Awaiting PO #',
+  'Material delivery sch','Measured','In Production','Ready for Install',
+  'Currently Installing','Installed & Complete','Invoice sent',
+  'Warranty work needed','Warranty work complete','Change Order - Quo',
+  'Change Order - Mea','Change Order - Inst','On Hold'
+];
+
+const STATUS_COLOR = {
+  'Awaiting Readiness':'badge-gray','Quoting':'badge-gray',
+  'Ready for Measure':'badge-blue','Awaiting PO #':'badge-amber',
+  'Material delivery sch':'badge-amber','Measured':'badge-blue',
+  'In Production':'badge-amber','Ready for Install':'badge-amber',
+  'Currently Installing':'badge-amber','Installed & Complete':'badge-green',
+  'Invoice sent':'badge-green','Warranty work needed':'badge-red',
+  'Warranty work complete':'badge-green','Change Order - Quo':'badge-amber',
+  'Change Order - Mea':'badge-amber','Change Order - Inst':'badge-amber',
+  'On Hold':'badge-red'
+};
+
+let allJobs = [];
+let pendingActions = [];
+let activeTab = 'brief';
+let modalJobId = null;
+let modalBoardId = null;
+let pendingPhotos = [];
+let pendingStatusJobId = null;
+
+function today() {
+  return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', ['brief','jobs','subs'][i] === tab);
+  });
+  ['brief','jobs','subs'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t === tab ? '' : 'none';
+  });
+}
+
+function toast(msg, dur=2200) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(WORKER + path, opts);
+  return r.json();
+}
+
+async function loadAll() {
+  document.getElementById('date-line').textContent = today();
+  renderBriefLoading();
+  try {
+    const [briefData, actionsData] = await Promise.all([
+      api('/brief','POST',{user:'dion',mode:'standard'}),
+      api('/actions')
+    ]);
+    pendingActions = actionsData.pending || [];
+    allJobs = extractJobs(briefData);
+    renderBrief(briefData);
+    renderJobs();
+    renderSubs();
+  } catch(e) {
+    document.getElementById('tab-brief').innerHTML =
+      `<div class="empty">Could not connect to Biff. Check your connection and try again.</div>`;
+  }
+}
+
+function extractJobs(brief) {
+  const jobs = [];
+  const dionActions = (pendingActions || []).filter(a => a.forDion);
+  return dionActions.map(a => ({
+    id: a.jobName || a.id,
+    name: a.jobName || 'Unknown job',
+    builder: a.builder || '',
+    status: a.jobStatus || '',
+    daysSince: a.daysSince || 0,
+    urgent: a.urgent || false,
+    boardId: '4072242499'
+  }));
+}
+
+function renderBriefLoading() {
+  document.getElementById('tab-brief').innerHTML =
+    `<div class="loading"><div class="spinner"></div>Loading your brief...</div>`;
+}
+
+function renderBrief(brief) {
+  const dionAlerts = pendingActions.filter(a => a.forDion && !a.dismissed);
+  const subItems = (brief.subEmails?.invoices || []).concat(brief.subEmails?.timesheets || []);
+
+  let html = '';
+
+  if (dionAlerts.length) {
+    html += `<div class="section-label">Needs your attention</div>`;
+    dionAlerts.forEach(a => {
+      html += `<div class="card ${a.urgent ? 'alert-card' : ''}">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${esc(a.title)}</div>
+            <div class="card-sub">${esc(a.detail || '')}</div>
+          </div>
+          ${a.urgent ? '<span class="badge badge-red">Urgent</span>' : ''}
+        </div>
+        ${a.followUp ? `<div class="card-body" style="font-size:13px;color:var(--text-muted)">${esc(a.followUp)}</div>` : ''}
+        <div class="action-row">
+          <button class="action-btn" onclick="dismissAction('${a.id}')">Dismiss</button>
+          <button class="action-btn primary" onclick="openUpdateForJob('${esc(a.jobName||'')}')">Update job</button>
+        </div>
+      </div>`;
+    });
+  } else {
+    html += `<div class="card"><div class="card-body" style="padding-top:14px;color:var(--text-muted);font-size:14px;">No alerts — you're all caught up.</div></div>`;
+  }
+
+  if (subItems.length) {
+    html += `<div class="section-label">Sub activity</div>`;
+    subItems.forEach(s => {
+      const doc = s.subDoc || {};
+      html += `<div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${esc(doc.sub || s.from)}</div>
+            <div class="card-sub">${esc(s.subject)}</div>
+          </div>
+          <span class="badge ${doc.type === 'SUB_INVOICE_REMINDER' ? 'badge-red' : 'badge-amber'}">
+            ${doc.type === 'SUB_HOURS' ? 'Hours' : doc.type === 'SUB_INVOICE_REMINDER' ? 'Overdue' : 'Invoice'}
+          </span>
+        </div>
+      </div>`;
+    });
+  }
+
+  html += `<div class="section-label">Today</div>
+    <div class="card">
+      <div class="card-body" style="padding-top:14px;font-size:14px;color:var(--text-muted);">
+        Tap <strong>Jobs</strong> to see your full job list and update statuses.
+      </div>
+    </div>`;
+
+  document.getElementById('tab-brief').innerHTML = html;
+}
+
+function renderJobs() {
+  let html = '';
+  if (!allJobs.length) {
+    html = `<div class="section-label">In progress</div>
+      <div class="empty">No stale jobs flagged right now.<br>All statuses are current.</div>`;
+  } else {
+    html += `<div class="section-label">Needs status update</div>`;
+    allJobs.forEach(job => {
+      const badge = STATUS_COLOR[job.status] || 'badge-gray';
+      html += `<div class="card" id="job-card-${esc(job.id)}">
+        <div class="card-header">
+          <div style="flex:1;min-width:0">
+            <div class="card-title">${esc(job.name)}</div>
+            <div class="card-sub">${esc(job.builder)}${job.daysSince ? ` · ${job.daysSince}d since update` : ''}</div>
+          </div>
+          <span class="badge ${badge}">${esc(job.status || 'No status')}</span>
+        </div>
+        ${job.daysSince >= 2 ? `<div class="stale-bar"><div class="stale-dot"></div>Status stale — tap to update</div>` : ''}
+        <div class="action-row">
+          <button class="action-btn" onclick="openNotePanel('${esc(job.id)}')">Add note</button>
+          <button class="action-btn primary" onclick="openStatusModal('${esc(job.id)}','${esc(job.boardId)}','${esc(job.name)}')">Update status</button>
+        </div>
+        <div class="note-panel" id="note-panel-${esc(job.id)}">
+          <div class="photo-required">
+            <span>&#9888;</span> A photo is required before changing status
+          </div>
+          <button class="photo-btn" onclick="triggerPhoto('${esc(job.id)}')">&#128247; Attach photo</button>
+          <div class="photo-preview" id="photos-${esc(job.id)}"></div>
+          <textarea placeholder="Add a note about this job..." id="note-text-${esc(job.id)}"></textarea>
+          <button class="note-submit" id="note-submit-${esc(job.id)}" onclick="submitNote('${esc(job.id)}')">Save note</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  html += `<div class="section-label">Log a field update</div>
+    <div class="card">
+      <div class="card-body" style="padding-top:14px">
+        <input type="text" id="quick-job" placeholder="Job address or number"
+          style="width:100%;padding:10px 12px;border:0.5px solid var(--border-strong);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);margin-bottom:8px">
+        <textarea id="quick-note" placeholder="What's happening on site..."
+          style="width:100%;padding:10px 12px;border:0.5px solid var(--border-strong);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);min-height:72px;resize:none;font-family:inherit"></textarea>
+        <button class="note-submit" style="margin-top:8px" onclick="submitQuickNote()">Send to Monday</button>
+      </div>
+    </div>`;
+
+  document.getElementById('tab-jobs').innerHTML = html;
+}
+
+function renderSubs() {
+  const html = `
+    <div class="section-label">Your subs</div>
+    <div class="card">
+      <div class="sub-row">
+        <div class="sub-avatar">ZG</div>
+        <div class="sub-info">
+          <div class="sub-name">Zuritex Glass LLC</div>
+          <div class="sub-detail">Dallas · Zelle payment</div>
+        </div>
+        <button class="sub-action" onclick="draftSubText('Zuritex','Dallas')">Text</button>
+      </div>
+      <div class="sub-row">
+        <div class="sub-avatar">RG</div>
+        <div class="sub-info">
+          <div class="sub-name">Ryan Gordano</div>
+          <div class="sub-detail">Citizens Glass · Little Rock · ACH</div>
+        </div>
+        <button class="sub-action" onclick="draftSubText('Ryan','Little Rock')">Text</button>
+      </div>
+    </div>
+    <div class="section-label">Send a reminder</div>
+    <div class="card">
+      <div class="card-body" style="padding-top:14px">
+        <select id="sub-select" style="width:100%;padding:10px 12px;border:0.5px solid var(--border-strong);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);margin-bottom:8px">
+          <option value="">Select sub...</option>
+          <option value="Zuritex">Zuritex Glass LLC — Dallas</option>
+          <option value="Ryan">Ryan Gordano — Little Rock</option>
+        </select>
+        <input type="text" id="sub-job" placeholder="Job address"
+          style="width:100%;padding:10px 12px;border:0.5px solid var(--border-strong);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);margin-bottom:8px">
+        <input type="text" id="sub-datetime" placeholder="Date & time (e.g. Thursday 7am)"
+          style="width:100%;padding:10px 12px;border:0.5px solid var(--border-strong);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);margin-bottom:8px">
+        <button class="note-submit" onclick="sendSubReminder()">Draft reminder</button>
+      </div>
+    </div>`;
+  document.getElementById('tab-subs').innerHTML = html;
+}
+
+function openStatusModal(jobId, boardId, jobName) {
+  modalJobId = jobId;
+  modalBoardId = boardId;
+  document.getElementById('modal-job-name').textContent = jobName;
+  const grid = document.getElementById('modal-status-grid');
+  grid.innerHTML = MONDAY_STATUSES.map(s => {
+    const badge = STATUS_COLOR[s] || 'badge-gray';
+    return `<button class="status-option" onclick="selectStatus('${esc(s)}')">${esc(s)}</button>`;
+  }).join('');
+  document.getElementById('status-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('status-modal').classList.remove('open');
+  modalJobId = null; modalBoardId = null;
+}
+
+async function selectStatus(status) {
+  if (!modalJobId) return;
+  closeModal();
+
+  const notePanel = document.getElementById('note-panel-' + modalJobId);
+  if (notePanel) {
+    notePanel.classList.add('open');
+    pendingStatusJobId = modalJobId;
+    document.getElementById('note-text-' + modalJobId).dataset.pendingStatus = status;
+    toast('Add a photo + note before status updates');
+    return;
+  }
+
+  await pushStatusUpdate(modalJobId, modalBoardId, status);
+}
+
+async function pushStatusUpdate(jobId, boardId, status) {
+  toast('Updating status...');
+  try {
+    await api('/job-status','POST',{jobId, lane:'operations', status, updatedBy:'dion'});
+    toast('Status updated — Monday will reflect shortly');
+    loadAll();
+  } catch(e) {
+    toast('Could not update — check connection');
+  }
+}
+
+function openNotePanel(jobId) {
+  const panel = document.getElementById('note-panel-' + jobId);
+  if (!panel) return;
+  panel.classList.toggle('open');
+}
+
+function triggerPhoto(jobId) {
+  const input = document.getElementById('photo-input');
+  input.dataset.jobId = jobId;
+  input.click();
+}
+
+document.getElementById('photo-input').addEventListener('change', function(e) {
+  const jobId = this.dataset.jobId;
+  const preview = document.getElementById('photos-' + jobId);
+  if (!preview) return;
+  Array.from(e.target.files).forEach(file => {
+    pendingPhotos.push({ jobId, file });
+    const img = document.createElement('img');
+    img.className = 'photo-thumb';
+    img.src = URL.createObjectURL(file);
+    preview.appendChild(img);
+  });
+});
+
+async function submitNote(jobId) {
+  const text = document.getElementById('note-text-' + jobId)?.value?.trim();
+  const photos = pendingPhotos.filter(p => p.jobId === jobId);
+  const pendingStatus = document.getElementById('note-text-' + jobId)?.dataset?.pendingStatus;
+
+  if (!text && !photos.length) { toast('Add a note or photo first'); return; }
+
+  const btn = document.getElementById('note-submit-' + jobId);
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  try {
+    await api('/note','POST',{ jobId, from:'dion', message: text || '(photo attached)' });
+    if (pendingStatus) {
+      await pushStatusUpdate(jobId, '4072242499', pendingStatus);
+    }
+    pendingPhotos = pendingPhotos.filter(p => p.jobId !== jobId);
+    document.getElementById('note-panel-' + jobId).classList.remove('open');
+    toast('Note saved');
+  } catch(e) {
+    toast('Could not save — check connection');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save note';
+  }
+}
+
+async function submitQuickNote() {
+  const jobId = document.getElementById('quick-job')?.value?.trim();
+  const note = document.getElementById('quick-note')?.value?.trim();
+  if (!jobId || !note) { toast('Enter job and note'); return; }
+  try {
+    await api('/note','POST',{ jobId, from:'dion', message: note });
+    document.getElementById('quick-job').value = '';
+    document.getElementById('quick-note').value = '';
+    toast('Note logged to Monday');
+  } catch(e) { toast('Could not save'); }
+}
+
+async function dismissAction(actionId) {
+  try {
+    await api('/actions/dismiss','POST',{ actionId });
+    pendingActions = pendingActions.filter(a => a.id !== actionId);
+    renderBrief({});
+    toast('Dismissed');
+  } catch(e) { toast('Could not dismiss'); }
+}
+
+function openUpdateForJob(jobName) {
+  const job = allJobs.find(j => j.name === jobName);
+  if (job) {
+    switchTab('jobs');
+    openStatusModal(job.id, job.boardId, job.name);
+  } else {
+    switchTab('jobs');
+    toast('Find the job below and tap Update status');
+  }
+}
+
+function draftSubText(sub, market) {
+  const jobInput = document.getElementById('sub-job');
+  document.getElementById('sub-select').value = sub;
+  switchTab('subs');
+  if (jobInput) jobInput.focus();
+}
+
+async function sendSubReminder() {
+  const sub = document.getElementById('sub-select').value;
+  const job = document.getElementById('sub-job').value.trim();
+  const dt = document.getElementById('sub-datetime').value.trim();
+  if (!sub || !job || !dt) { toast('Fill in all fields'); return; }
+  const message = `Hey — reminder you're at ${job} on ${dt}. Let me know if anything changes.`;
+  await api('/note','POST',{ jobId: job, from:'dion', message: `Sub reminder drafted for ${sub}: ${message}` });
+  toast('Reminder logged — send to ' + sub);
+  document.getElementById('sub-job').value = '';
+  document.getElementById('sub-datetime').value = '';
+}
+
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+document.getElementById('date-line').textContent = today();
+loadAll();
+</script>
+</body>
+</html>
