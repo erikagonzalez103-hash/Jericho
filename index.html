@@ -710,7 +710,7 @@ async function api(path, method='GET', body=null) {
 }
 
 async function callJericho(userMsg, ctx='') {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const r = await fetch('https://frosty-base-f01e.erikagonzalez103.workers.dev/v1/messages', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
