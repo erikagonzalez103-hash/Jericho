@@ -275,6 +275,13 @@ body {
 }
 .option-btn:hover { border-color: var(--blue); color: var(--text); }
 .option-btn.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+.cal-day { min-height: 70px; padding: 4px; border-radius: 4px; border: 1px solid transparent; font-size: 11px; }
+.cal-day-empty { min-height: 70px; }
+.cal-day-selectable:hover { border-color: var(--blue); background: var(--blue-dim); }
+.cal-today { background: var(--surface2); }
+.cal-day-num { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; }
+.cal-today-num { background: var(--blue); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.cal-event { font-size: 9px; background: var(--blue-dim); color: var(--blue); border-radius: 3px; padding: 1px 3px; margin-bottom: 1px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* ── METRICS GRID ── */
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin-bottom: 12px; }
@@ -1067,94 +1074,243 @@ async function renderInbox() {
   }
 }
 
-// ── CALENDAR ──────────────────────────────────────────────────────────
+// ── CALENDAR + TODO COMBINED VIEW ────────────────────────────────────
+let calendarEvents = [];
+let calendarYear = new Date().getFullYear();
+let calendarMonth = new Date().getMonth();
+let schedulingTodo = null;
+
 async function renderCalendar() {
   document.getElementById('tab-calendar').innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading calendar...</div></div>`;
   try {
-    const data = await api('/brief', 'POST', {user:'dion'});
-    const events = data.calendar || [];
-    let html = '';
+    const resp = await fetch('https://frosty-base-f01e.erikagonzalez103.workers.dev/calendar/dion');
+    const json = await resp.json();
+    calendarEvents = json.events || [];
+  } catch(e) { calendarEvents = []; }
+  renderCalendarView();
+}
 
-    if (!events.length) {
-      html = `<div class="empty">No events found for today or tomorrow.</div>`;
-    } else {
-      let lastDay = '';
-      events.forEach(ev => {
-        const day = ev.day || '';
-        if (day !== lastDay) {
-          html += `<div class="section-label">${esc(day)}</div>`;
-          lastDay = day;
-        }
-        html += `<div class="card" style="margin-bottom:8px">
-          <div style="padding:12px 16px;display:flex;align-items:center;gap:12px">
-            <div style="min-width:52px;text-align:center">
-              <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(ev.time||'All day')}</div>
+function renderCalendarView() {
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const today = new Date();
+  const todayStr = today.toLocaleDateString('en-CA');
+  const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+
+  let dayCells = '';
+  for (let i = 0; i < firstDay; i++) dayCells += `<div class="cal-day cal-day-empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    const isToday = dateStr === todayStr;
+    const dayEvents = calendarEvents.filter(e => e.date === dateStr);
+    const isScheduling = schedulingTodo !== null;
+    dayCells += `<div class="cal-day ${isToday?'cal-today':''} ${isScheduling?'cal-day-selectable':''}" onclick="${isScheduling ? `pickDay('${dateStr}')` : ''}" style="${isScheduling?'cursor:pointer;':''}">
+      <div class="cal-day-num ${isToday?'cal-today-num':''}">${d}</div>
+      ${dayEvents.slice(0,3).map(ev => `<div class="cal-event">${esc(ev.subject)}</div>`).join('')}
+      ${dayEvents.length > 3 ? `<div style="font-size:9px;color:var(--text-hint)">+${dayEvents.length-3} more</div>` : ''}
+    </div>`;
+  }
+
+  const schedulingBanner = schedulingTodo ? `
+    <div style="background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div style="font-size:12px;color:var(--blue)">📅 Scheduling: <strong>${esc(schedulingTodo.text)}</strong> — tap a day</div>
+      <button onclick="cancelScheduling()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:18px">×</button>
+    </div>` : '';
+
+  const timeOptions = Array.from({length:28}, (_,i) => {
+    const h = Math.floor(i/2) + 7;
+    const m = i%2===0?'00':'30';
+    const ampm = h>=12?'PM':'AM';
+    const h12 = h>12?h-12:(h===0?12:h);
+    const val = String(h).padStart(2,'0')+':'+m+':00';
+    const label = h12+':'+m+' '+ampm;
+    return `<option value="${val}">${label}</option>`;
+  }).join('');
+
+  const startOptions = timeOptions.replace('value="08:00:00">', 'value="08:00:00" selected>');
+  const endOptions = timeOptions.replace('value="11:00:00">', 'value="11:00:00" selected>');
+
+  const openTodos = todos.filter(t => !t.done);
+
+  const html = `
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        ${schedulingBanner}
+        <div class="card">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <button onclick="calNav(-1)" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:20px;padding:0 8px">‹</button>
+            <div style="font-size:14px;font-weight:700;color:var(--text)">${MONTHS[calendarMonth]} ${calendarYear}</div>
+            <button onclick="calNav(1)" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:20px;padding:0 8px">›</button>
+          </div>
+          <div style="padding:8px">
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">
+              ${DAYS.map(d => `<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text-hint);padding:4px 0">${d}</div>`).join('')}
             </div>
-            <div style="flex:1;min-width:0;border-left:2px solid var(--blue);padding-left:12px">
-              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(ev.subject||ev.title||'')}</div>
-              ${ev.location?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px">📍 ${esc(ev.location)}</div>`:''}
-              ${ev.duration?`<div style="font-size:11px;color:var(--text-hint);margin-top:2px">${esc(ev.duration)}</div>`:''}
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">${dayCells}</div>
+          </div>
+        </div>
+      </div>
+      <div style="width:220px;flex-shrink:0">
+        <div class="section-label" style="margin-top:0">To-Do</div>
+        <div class="card" style="margin-bottom:8px">
+          <div style="padding:8px 10px;display:flex;gap:6px">
+            <input class="field-input" type="text" id="todo-input" placeholder="Add task..." style="margin:0;flex:1;font-size:12px" onkeydown="if(event.key==='Enter')addTodo()">
+            <button class="action-btn primary" onclick="addTodo()" style="font-size:11px;padding:6px 10px">+</button>
+          </div>
+        </div>
+        <div class="card">
+          ${openTodos.length === 0 ? '<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-hint)">No tasks</div>' :
+            openTodos.map(t => {
+              const idx = todos.indexOf(t);
+              const isSelected = schedulingTodo && schedulingTodo === t;
+              return `<div style="padding:8px 10px;border-bottom:1px solid var(--border);${isSelected?'background:var(--blue-dim);':''}">
+                <div style="display:flex;align-items:flex-start;gap:6px">
+                  <input type="checkbox" onchange="toggleTodo(${idx})" style="width:14px;height:14px;margin-top:2px;cursor:pointer;accent-color:var(--green);flex-shrink:0">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;color:var(--text);word-break:break-word">${esc(t.text)}</div>
+                    ${t.scheduledDate ? `<div style="font-size:10px;color:var(--blue);margin-top:2px">📅 ${t.scheduledDate}${t.scheduledTime?' · '+t.scheduledTime:''}</div>` : ''}
+                  </div>
+                  <button onclick="startScheduling(${idx})" title="Schedule on calendar" style="background:none;border:none;color:${isSelected?'var(--blue)':'var(--text-hint)'};cursor:pointer;font-size:14px;padding:0;flex-shrink:0">📅</button>
+                </div>
+              </div>`;
+            }).join('')
+          }
+          ${todos.filter(t=>t.done).length > 0 ? `<div style="padding:6px 10px;text-align:center;border-top:1px solid var(--border)"><button class="action-btn" onclick="clearDone()" style="font-size:11px">Clear ${todos.filter(t=>t.done).length} done</button></div>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div id="time-picker-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:var(--radius);padding:24px;width:300px;border:1px solid var(--border);box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Schedule task</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px" id="time-picker-task"></div>
+        <div style="font-size:13px;font-weight:600;color:var(--blue);margin-bottom:14px" id="time-picker-date"></div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer">
+          <input type="checkbox" id="allday-check" onchange="toggleAllDay()" style="width:14px;height:14px;accent-color:var(--blue)">
+          <span style="font-size:13px;color:var(--text)">All day</span>
+        </label>
+        <div id="time-fields" style="margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px">Start</div>
+              <select class="field-input" id="start-time" style="margin:0;font-size:12px">${startOptions}</select>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px">End</div>
+              <select class="field-input" id="end-time" style="margin:0;font-size:12px">${endOptions}</select>
             </div>
           </div>
-        </div>`;
-      });
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="action-btn" onclick="cancelScheduling()" style="flex:1">Cancel</button>
+          <button class="action-btn primary" onclick="confirmSchedule()" style="flex:1">Add to Calendar</button>
+        </div>
+        <div id="schedule-status" style="margin-top:10px;font-size:12px;text-align:center;display:none"></div>
+      </div>
+    </div>`;
+
+  document.getElementById('tab-calendar').innerHTML = html;
+}
+
+function calNav(dir) {
+  calendarMonth += dir;
+  if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+  if (calendarMonth < 0)  { calendarMonth = 11; calendarYear--; }
+  renderCalendarView();
+}
+
+function startScheduling(todoIdx) {
+  schedulingTodo = todos[todoIdx];
+  schedulingTodo._idx = todoIdx;
+  renderCalendarView();
+}
+
+function cancelScheduling() {
+  schedulingTodo = null;
+  const modal = document.getElementById('time-picker-modal');
+  if (modal) modal.style.display = 'none';
+  renderCalendarView();
+}
+
+function pickDay(dateStr) {
+  if (!schedulingTodo) return;
+  const modal = document.getElementById('time-picker-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  modal._date = dateStr;
+  const taskEl = document.getElementById('time-picker-task');
+  const dateEl = document.getElementById('time-picker-date');
+  if (taskEl) taskEl.textContent = schedulingTodo.text;
+  if (dateEl) {
+    const d = new Date(dateStr + 'T12:00:00');
+    dateEl.textContent = d.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+  }
+  const status = document.getElementById('schedule-status');
+  if (status) status.style.display = 'none';
+  const alldayCheck = document.getElementById('allday-check');
+  if (alldayCheck) alldayCheck.checked = false;
+  const timeFields = document.getElementById('time-fields');
+  if (timeFields) timeFields.style.display = 'block';
+}
+
+function toggleAllDay() {
+  const checked = document.getElementById('allday-check').checked;
+  const timeFields = document.getElementById('time-fields');
+  if (timeFields) timeFields.style.display = checked ? 'none' : 'block';
+}
+
+async function confirmSchedule() {
+  const modal = document.getElementById('time-picker-modal');
+  const dateStr = modal._date;
+  const allDay = document.getElementById('allday-check').checked;
+  const startTime = document.getElementById('start-time').value;
+  const endTime = document.getElementById('end-time').value;
+  const status = document.getElementById('schedule-status');
+  status.style.display = 'block';
+  status.style.color = 'var(--text-muted)';
+  status.textContent = 'Adding to Outlook...';
+  try {
+    const resp = await fetch('https://frosty-base-f01e.erikagonzalez103.workers.dev/calendar/dion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject: schedulingTodo.text, date: dateStr, allDay, startTime, endTime })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      const d = new Date(dateStr + 'T12:00:00');
+      const dateLabel = d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+      todos[schedulingTodo._idx].scheduledDate = dateLabel;
+      if (!allDay) {
+        const h = parseInt(startTime.split(':')[0]);
+        const m = startTime.split(':')[1];
+        const ampm = h>=12?'PM':'AM';
+        const h12 = h>12?h-12:(h===0?12:h);
+        todos[schedulingTodo._idx].scheduledTime = h12+':'+m+' '+ampm;
+      }
+      saveTodos();
+      calendarEvents.push({ id: result.eventId, subject: schedulingTodo.text, date: dateStr, isAllDay: allDay });
+      status.style.color = 'var(--green)';
+      status.textContent = '✓ Added to your Outlook calendar';
+      setTimeout(() => { modal.style.display = 'none'; schedulingTodo = null; renderCalendarView(); }, 1200);
+    } else {
+      status.style.color = 'var(--red)';
+      status.textContent = 'Failed — ' + (result.error || 'unknown error');
     }
-    document.getElementById('tab-calendar').innerHTML = html;
   } catch(e) {
-    document.getElementById('tab-calendar').innerHTML = `<div class="empty">Could not load calendar — check connection.</div>`;
+    status.style.color = 'var(--red)';
+    status.textContent = 'Connection error — try again';
   }
 }
 
 // ── TO-DO ─────────────────────────────────────────────────────────────
 let todos = JSON.parse(localStorage.getItem('jericho:todos') || '[]');
-
-function saveTodos() {
-  localStorage.setItem('jericho:todos', JSON.stringify(todos));
-}
-
+function saveTodos() { localStorage.setItem('jericho:todos', JSON.stringify(todos)); }
 function renderTodos() {
-  const open = todos.filter(t => !t.done);
-  const done = todos.filter(t => t.done);
-  let html = `
-    <div class="section-label">To-Do</div>
-    <div class="card" style="margin-bottom:10px">
-      <div style="padding:12px 16px;display:flex;gap:8px">
-        <input class="field-input" type="text" id="todo-input" placeholder="Add a task..." style="margin:0;flex:1" onkeydown="if(event.key==='Enter')addTodo()">
-        <button class="action-btn primary" onclick="addTodo()" style="white-space:nowrap">Add</button>
-      </div>
-    </div>`;
-
-  if (open.length) {
-    html += `<div class="card" style="margin-bottom:10px">`;
-    open.forEach((t,i) => {
-      const idx = todos.indexOf(t);
-      html += `<div style="padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)">
-        <input type="checkbox" onchange="toggleTodo(${idx})" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
-        <div style="flex:1;font-size:13px;color:var(--text)">${esc(t.text)}</div>
-        <button onclick="deleteTodo(${idx})" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:16px;padding:0 4px">×</button>
-      </div>`;
-    });
-    html += `</div>`;
-  } else {
-    html += `<div class="empty" style="margin-bottom:10px">Nothing on the list. Add something above.</div>`;
+  if (document.getElementById('tab-todos')) {
+    document.getElementById('tab-todos').innerHTML = `<div class="empty">To-Do is in the Calendar tab — click 📅 on any task to schedule it.</div>`;
   }
-
-  if (done.length) {
-    html += `<div class="section-label">Done</div><div class="card">`;
-    done.slice(0,5).forEach(t => {
-      const idx = todos.indexOf(t);
-      html += `<div style="padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);opacity:0.5">
-        <input type="checkbox" checked onchange="toggleTodo(${idx})" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
-        <div style="flex:1;font-size:13px;color:var(--text);text-decoration:line-through">${esc(t.text)}</div>
-        <button onclick="deleteTodo(${idx})" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:16px;padding:0 4px">×</button>
-      </div>`;
-    });
-    html += `<div style="padding:10px 16px;text-align:center"><button class="action-btn" onclick="clearDone()">Clear completed</button></div></div>`;
-  }
-
-  document.getElementById('tab-todos').innerHTML = html;
 }
-
 function addTodo(text) {
   const input = document.getElementById('todo-input');
   const t = text || (input && input.value.trim());
@@ -1162,28 +1318,12 @@ function addTodo(text) {
   todos.unshift({ text: t, done: false, created: Date.now() });
   saveTodos();
   if (input) input.value = '';
-  renderTodos();
-  if (!text) toast('Task added ✓');
-  else toast('Added to To-Do ✓');
+  renderCalendarView();
+  toast(text ? 'Added to To-Do ✓' : 'Task added ✓');
 }
-
-function toggleTodo(idx) {
-  todos[idx].done = !todos[idx].done;
-  saveTodos();
-  renderTodos();
-}
-
-function deleteTodo(idx) {
-  todos.splice(idx, 1);
-  saveTodos();
-  renderTodos();
-}
-
-function clearDone() {
-  todos = todos.filter(t => !t.done);
-  saveTodos();
-  renderTodos();
-}
+function toggleTodo(idx) { todos[idx].done = !todos[idx].done; saveTodos(); renderCalendarView(); }
+function deleteTodo(idx) { todos.splice(idx, 1); saveTodos(); renderCalendarView(); }
+function clearDone() { todos = todos.filter(t => !t.done); saveTodos(); renderCalendarView(); }
 
 function renderScoreboard() {
   const fmt = n => n ? '$' + (parseFloat(String(n).replace(/[$,]/g,''))||0).toLocaleString() : '—';
