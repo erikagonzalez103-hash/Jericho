@@ -1185,18 +1185,45 @@ function clearDone() {
 }
 
 function renderScoreboard() {
+  const fmt = n => n ? '$' + (parseFloat(String(n).replace(/[$,]/g,''))||0).toLocaleString() : '—';
+  const rev = parseFloat(String(scorecardData.revenue||'0').replace(/[$,]/g,''))||0;
+  const exp = parseFloat(String(scorecardData.expenses||'0').replace(/[$,]/g,''))||0;
+  const profit = rev && exp ? rev - exp : null;
+  const profitColor = profit === null ? 'var(--text-muted)' : profit >= 0 ? 'var(--green)' : 'var(--red)';
+
   const html = `
-    <div class="section-label">CEO scoreboard — enter daily</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="section-label" style="margin:0">CEO scoreboard</div>
+      <button class="action-btn" onclick="autoFillScoreboard()" style="font-size:11px">⚡ Auto-fill from Xero</button>
+    </div>
+    <div id="autofill-status" style="font-size:11px;color:var(--green);margin-bottom:8px;display:none"></div>
     <div class="card">
-      <div class="scorecard-row"><div class="scorecard-label">Cash in bank</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.cash||''}" onchange="scorecardData.cash=this.value"></div>
-      <div class="scorecard-row"><div class="scorecard-label">Revenue (MTD)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.revenue||''}" onchange="scorecardData.revenue=this.value"></div>
-      <div class="scorecard-row"><div class="scorecard-label">Expenses (MTD)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.expenses||''}" onchange="scorecardData.expenses=this.value"></div>
-      <div class="scorecard-row"><div class="scorecard-label">Profit (MTD)</div>
-        <div class="scorecard-input" style="background:var(--surface2);cursor:default;color:${scorecardData.revenue&&scorecardData.expenses?(parseFloat(String(scorecardData.revenue).replace(/[$,]/g,''))-parseFloat(String(scorecardData.expenses).replace(/[$,]/g,''))>=0?'var(--green)':'var(--red)'):'var(--text-muted)'}">
-          ${scorecardData.revenue&&scorecardData.expenses?'$'+(parseFloat(String(scorecardData.revenue).replace(/[$,]/g,''))-parseFloat(String(scorecardData.expenses).replace(/[$,]/g,''))).toLocaleString():'Auto'}
+      <div class="scorecard-row"><div class="scorecard-label">Cash in bank</div><input class="scorecard-input" type="text" placeholder="$0 (manual)" value="${scorecardData.cash||''}" onchange="scorecardData.cash=this.value"></div>
+      <div class="scorecard-row">
+        <div class="scorecard-label">Revenue (MTD)</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${scorecardData.revenueAuto?`<span style="font-size:10px;color:var(--green)">●</span>`:''}
+          <input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.revenue||''}" onchange="scorecardData.revenue=this.value;renderScoreboard()">
         </div>
       </div>
-      <div class="scorecard-row"><div class="scorecard-label">A/R aging (overdue)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.ar||''}" onchange="scorecardData.ar=this.value"></div>
+      <div class="scorecard-row">
+        <div class="scorecard-label">Expenses (MTD)</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${scorecardData.expensesAuto?`<span style="font-size:10px;color:var(--green)">●</span>`:''}
+          <input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.expenses||''}" onchange="scorecardData.expenses=this.value;renderScoreboard()">
+        </div>
+      </div>
+      <div class="scorecard-row"><div class="scorecard-label">Profit (MTD)</div>
+        <div class="scorecard-input" style="background:var(--surface2);cursor:default;color:${profitColor};font-weight:600">
+          ${profit !== null ? '$'+profit.toLocaleString() : 'Auto'}
+        </div>
+      </div>
+      <div class="scorecard-row">
+        <div class="scorecard-label">A/R total (we owe)</div>
+        <div class="scorecard-input" style="background:var(--surface2);cursor:default;color:var(--amber);font-weight:600" id="ar-total-display">
+          ${scorecardData.arTotal ? '$'+parseFloat(scorecardData.arTotal).toLocaleString() : '—'}
+        </div>
+      </div>
       <div class="scorecard-row"><div class="scorecard-label">Booked jobs (next 2 wks)</div><input class="scorecard-input" type="text" placeholder="0" value="${scorecardData.booked||''}" onchange="scorecardData.booked=this.value"></div>
       <div class="scorecard-row"><div class="scorecard-label">Signed sales this week</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.signed||''}" onchange="scorecardData.signed=this.value"></div>
     </div>
@@ -1218,40 +1245,113 @@ function renderScoreboard() {
   loadARVendors();
 }
 
+async function autoFillScoreboard() {
+  const status = document.getElementById('autofill-status');
+  if (status) { status.style.display='block'; status.textContent='Pulling from Xero...'; }
+  try {
+    const data = await api('/brief', 'POST', { user:'dion' });
+    const cf = data.cashflowMTD;
+    if (cf) {
+      scorecardData.revenue = '$' + (cf.receivedMTD||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      scorecardData.expenses = '$' + (cf.spentMTD||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      scorecardData.revenueAuto = true;
+      scorecardData.expensesAuto = true;
+    }
+    const payables = data.payables || [];
+    const total = payables.reduce((s,p) => s+(parseFloat(p.amount)||0), 0);
+    scorecardData.arTotal = total;
+    renderScoreboard();
+    if (status) { status.style.display='block'; status.textContent='✓ Auto-filled from Xero — ' + (cf ? cf.month : '') + ' data'; }
+  } catch(e) {
+    if (status) { status.style.display='block'; status.style.color='var(--red)'; status.textContent='Could not connect to Xero.'; }
+  }
+}
+
 async function loadARVendors() {
   const container = document.getElementById('ar-vendors-container');
   if (!container) return;
   try {
     const data = await api('/brief', 'POST', { user:'dion' });
     const payables = data.payables || [];
+
     if (!payables.length) {
-      container.innerHTML = `<div class="card"><div class="card-body" style="padding:14px;text-align:center;color:var(--text-muted);font-size:13px">No outstanding vendor balances.</div></div>`;
+      container.innerHTML = `<div class="empty">No outstanding vendor balances.</div>`;
       return;
     }
+
     const fmt = n => '$' + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const total = payables.reduce((s,p) => s+(parseFloat(p.amount)||0), 0);
-    let html = `<div class="card">`;
+
+    // Group by vendor
+    const vendors = {};
     payables.forEach(p => {
-      const overdue = p.overdue;
-      html += `<div class="scorecard-row" style="${overdue?'background:var(--red-dim);':''}">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--text);font-weight:500">${esc(p.vendor||p.vendorShort||'Unknown')}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.dueDate?'Due: '+p.dueDate:'No due date'}${p.invoiceNum?' · #'+p.invoiceNum:''}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:13px;font-weight:600;color:${overdue?'var(--red)':'var(--text)'}">${fmt(p.amount)}</div>
-          ${overdue?'<div style="font-size:10px;color:var(--red);text-transform:uppercase;font-weight:600">Overdue</div>':''}
+      const name = p.vendor || p.vendorShort || 'Unknown';
+      if (!vendors[name]) vendors[name] = { name, invoices:[], total:0, hasOverdue:false };
+      vendors[name].invoices.push(p);
+      vendors[name].total += parseFloat(p.amount)||0;
+      if (p.overdue) vendors[name].hasOverdue = true;
+    });
+
+    const total = payables.reduce((s,p) => s+(parseFloat(p.amount)||0), 0);
+
+    // Update A/R display in scoreboard
+    scorecardData.arTotal = total;
+    const arDisplay = document.getElementById('ar-total-display');
+    if (arDisplay) arDisplay.textContent = '$' + total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    // Overall total bar
+    let html = `<div class="card" style="margin-bottom:10px">
+      <div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Total owed to all vendors</div>
+        <div style="font-size:18px;font-weight:700;color:var(--amber)">${fmt(total)}</div>
+      </div>
+    </div>`;
+
+    // Vendor grid
+    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:10px">`;
+    Object.values(vendors).forEach((v, i) => {
+      html += `<div class="card" style="cursor:pointer;${v.hasOverdue?'border-color:var(--red);':''}" onclick="toggleVendorDetail('vendor-detail-${i}')">
+        <div style="padding:14px 16px;text-align:center">
+          <div style="font-size:12px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--text)'};margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">${esc(v.name)}</div>
+          <div style="font-size:18px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--amber)'};">${fmt(v.total)}</div>
+          <div style="font-size:10px;color:var(--text-hint);margin-top:4px">${v.invoices.length} invoice${v.invoices.length>1?'s':''} ${v.hasOverdue?'· OVERDUE':''}</div>
         </div>
       </div>`;
     });
-    html += `<div class="scorecard-row" style="background:var(--surface2)">
-      <div style="flex:1;font-size:13px;font-weight:600;color:var(--text)">Total owed</div>
-      <div style="font-size:14px;font-weight:700;color:var(--amber)">${fmt(total)}</div>
-    </div></div>`;
+    html += `</div>`;
+
+    // Vendor detail panels (hidden by default)
+    Object.values(vendors).forEach((v, i) => {
+      html += `<div id="vendor-detail-${i}" style="display:none;margin-bottom:10px">
+        <div class="card">
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase">${esc(v.name)} — invoices</div>`;
+      v.invoices.forEach(inv => {
+        html += `<div class="scorecard-row" style="${inv.overdue?'background:var(--red-dim);':''}">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;color:var(--text)">${inv.invoiceNum ? '#'+esc(inv.invoiceNum) : 'No invoice #'}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${inv.dueDate?'Due: '+inv.dueDate:'No due date'}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;font-weight:600;color:${inv.overdue?'var(--red)':'var(--text)'}">${fmt(inv.amount)}</div>
+            ${inv.overdue?'<div style="font-size:10px;color:var(--red);font-weight:600">OVERDUE</div>':''}
+          </div>
+        </div>`;
+      });
+      html += `<div class="scorecard-row" style="background:var(--surface2)">
+          <div style="flex:1;font-size:12px;font-weight:600;color:var(--text)">Total</div>
+          <div style="font-size:13px;font-weight:700;color:var(--amber)">${fmt(v.total)}</div>
+        </div></div></div>`;
+    });
+
     container.innerHTML = html;
   } catch(e) {
     container.innerHTML = `<div class="empty">Could not load vendor balances.</div>`;
   }
+}
+
+function toggleVendorDetail(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 async function askBusiness() {
