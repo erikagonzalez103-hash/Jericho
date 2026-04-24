@@ -743,7 +743,7 @@ async function api(path, method='GET', body=null) {
 }
 
 async function callJericho(userMsg, ctx='') {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const r = await fetch('https://frosty-base-f01e.erikagonzalez103.workers.dev/api/messages', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
@@ -752,6 +752,7 @@ async function callJericho(userMsg, ctx='') {
       messages:[{role:'user',content:userMsg}]
     })
   });
+  if (!r.ok) return 'Error: ' + r.status + ' ' + r.statusText;
   const data = await r.json();
   return data.content?.[0]?.text || 'Could not reach Jericho right now.';
 }
@@ -1009,7 +1010,7 @@ async function askJericho() {
 async function renderInbox() {
   document.getElementById('tab-inbox').innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading priority emails...</div></div>`;
   try {
-    const data = await api('/brief', 'POST', { user:'dion' });
+    const data = await api('/brief', 'POST', {user:'dion'});
     const priority = data.priority || [];
     const stale = data.stale || [];
     const vendorDocs = data.vendorDocs || [];
@@ -1070,7 +1071,7 @@ async function renderInbox() {
 async function renderCalendar() {
   document.getElementById('tab-calendar').innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading calendar...</div></div>`;
   try {
-    const data = await api('/brief', 'POST', { user:'dion' });
+    const data = await api('/brief', 'POST', {user:'dion'});
     const events = data.calendar || [];
     let html = '';
 
@@ -1306,24 +1307,29 @@ async function loadARVendors() {
       </div>
     </div>`;
 
-    // Vendor grid
-    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:10px">`;
+    // Vendor cards row
+    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:10px">`;
     Object.values(vendors).forEach((v, i) => {
-      html += `<div class="card" style="cursor:pointer;${v.hasOverdue?'border-color:var(--red);':''}" onclick="toggleVendorDetail('vendor-detail-${i}')">
-        <div style="padding:14px 16px;text-align:center">
-          <div style="font-size:12px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--text)'};margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">${esc(v.name)}</div>
-          <div style="font-size:18px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--amber)'};">${fmt(v.total)}</div>
-          <div style="font-size:10px;color:var(--text-hint);margin-top:4px">${v.invoices.length} invoice${v.invoices.length>1?'s':''} ${v.hasOverdue?'· OVERDUE':''}</div>
+      html += `<div class="card" style="cursor:pointer;${v.hasOverdue?'border:1px solid var(--red);':''}" onclick="toggleVendorDetail('vendor-detail-${i}')">
+        <div style="padding:14px 12px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--text-muted)'};margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">${esc(v.name)}</div>
+          <div style="font-size:20px;font-weight:700;color:${v.hasOverdue?'var(--red)':'var(--amber)'};">${fmt(v.total)}</div>
+          <div style="font-size:10px;color:var(--text-hint);margin-top:4px">${v.invoices.length} invoice${v.invoices.length>1?'s':''}</div>
+          ${v.hasOverdue?'<div style="font-size:10px;color:var(--red);font-weight:700;margin-top:2px">OVERDUE</div>':''}
+          <div style="font-size:10px;color:var(--blue);margin-top:6px">tap to expand ▾</div>
         </div>
       </div>`;
     });
     html += `</div>`;
 
-    // Vendor detail panels (hidden by default)
+    // Detail panels — full width, below the grid, one at a time
     Object.values(vendors).forEach((v, i) => {
       html += `<div id="vendor-detail-${i}" style="display:none;margin-bottom:10px">
         <div class="card">
-          <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase">${esc(v.name)} — invoices</div>`;
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase">${esc(v.name)}</div>
+            <button onclick="toggleVendorDetail('vendor-detail-${i}')" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:18px;line-height:1">×</button>
+          </div>`;
       v.invoices.forEach(inv => {
         html += `<div class="scorecard-row" style="${inv.overdue?'background:var(--red-dim);':''}">
           <div style="flex:1;min-width:0">
@@ -1349,6 +1355,11 @@ async function loadARVendors() {
 }
 
 function toggleVendorDetail(id) {
+  // Close all other vendor details first
+  document.querySelectorAll('[id^="vendor-detail-"]').forEach(el => {
+    if (el.id !== id) el.style.display = 'none';
+  });
+  // Toggle the clicked one
   const el = document.getElementById(id);
   if (!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
