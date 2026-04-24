@@ -513,6 +513,15 @@ select.field-input { appearance: none; cursor: pointer; }
       <span class="nav-icon">⚡</span> Weekly 5
       <span class="nav-dot" id="w5-dot"></span>
     </button>
+    <button class="nav-item" onclick="switchTab('inbox')">
+      <span class="nav-icon">📬</span> Inbox
+    </button>
+    <button class="nav-item" onclick="switchTab('calendar')">
+      <span class="nav-icon">📅</span> Calendar
+    </button>
+    <button class="nav-item" onclick="switchTab('todos')">
+      <span class="nav-icon">✅</span> To-Do
+    </button>
   </nav>
 
   <nav class="nav-section">
@@ -586,6 +595,9 @@ select.field-input { appearance: none; cursor: pointer; }
   <div class="content">
     <div id="tab-brief"></div>
     <div id="tab-weekly5" style="display:none"></div>
+    <div id="tab-inbox" style="display:none"></div>
+    <div id="tab-calendar" style="display:none"></div>
+    <div id="tab-todos" style="display:none"></div>
     <div id="tab-scoreboard" style="display:none"></div>
     <div id="tab-jobs" style="display:none"></div>
     <div id="tab-subs" style="display:none"></div>
@@ -666,6 +678,9 @@ const HANDOFF_TYPES = [{value:'MEASUREMENT_COMPLETE',label:'Measurement complete
 const TABS = {
   'brief': {title:'Brief', sub:'Daily operating brief · Jericho'},
   'weekly5': {title:'Weekly 5', sub:'Your growth focus this week · Jericho'},
+  'inbox': {title:'Inbox', sub:'Priority emails · dion@eridionglass.com'},
+  'calendar': {title:'Calendar', sub:'Today & tomorrow · Microsoft'},
+  'todos': {title:'To-Do', sub:'Quick list · Jericho'},
   'scoreboard': {title:'Scoreboard', sub:'CEO daily metrics · Eridion Glass'},
   'jobs': {title:'Jobs', sub:'Field status updates · Monday.com'},
   'subs': {title:'Subs', sub:'Sub-contractor coordination'},
@@ -764,6 +779,9 @@ async function loadAll() {
     await generateBrief();
     renderScoreboard();
     renderJobs();
+    renderInbox();
+    renderCalendar();
+    renderTodos();
     renderSubs();
     renderTraining();
     renderNutrition();
@@ -987,16 +1005,205 @@ async function askJericho() {
   catch(e) { resp.textContent='Could not reach Jericho.'; }
 }
 
+// ── INBOX ─────────────────────────────────────────────────────────────
+async function renderInbox() {
+  document.getElementById('tab-inbox').innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading priority emails...</div></div>`;
+  try {
+    const data = await api('/brief', 'POST', { user:'dion' });
+    const priority = data.priority || [];
+    const stale = data.stale || [];
+    const vendorDocs = data.vendorDocs || [];
+    let html = '';
+
+    // Priority emails
+    if (priority.length || vendorDocs.length) {
+      html += `<div class="section-label">Priority — action needed</div>`;
+      [...priority, ...vendorDocs.filter(v => v.vendorDoc?.type === 'BUILDER_PO')].forEach(e => {
+        const tag = e.type || e.vendorDoc?.type || 'general';
+        const tagColor = tag.includes('payment')||tag.includes('INVOICE') ? 'badge-green' : tag.includes('urgent') ? 'badge-red' : tag.includes('PO')||tag.includes('po') ? 'badge-amber' : 'badge-gray';
+        html += `<div class="card" style="margin-bottom:8px">
+          <div style="padding:12px 16px;display:flex;align-items:flex-start;gap:12px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">${esc(e.from)}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${esc(e.subject)}</div>
+              <div style="font-size:11px;color:var(--text-hint)">${esc(e.preview||'')}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+              <span class="badge ${tagColor}">${tag.replace(/_/g,' ')}</span>
+              <span style="font-size:10px;color:var(--text-hint)">${esc(e.time||'')}</span>
+            </div>
+          </div>
+        </div>`;
+      });
+    }
+
+    // Stale — no reply in 24hrs
+    if (stale.length) {
+      html += `<div class="section-label">No reply in 24hrs</div>`;
+      stale.slice(0,5).forEach(e => {
+        html += `<div class="card" style="margin-bottom:8px">
+          <div style="padding:12px 16px;display:flex;align-items:flex-start;gap:12px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">${esc(e.from)}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${esc(e.subject)}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+              <span class="badge badge-amber">${e.staleType==='they_went_quiet'?'They went quiet':'Unread'}</span>
+              <span style="font-size:10px;color:var(--text-hint)">${e.hours}h ago</span>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="action-btn primary" onclick="addTodo('Reply to ${esc(e.from)} — ${esc(e.subject.substring(0,40))}')">Add to To-Do</button>
+          </div>
+        </div>`;
+      });
+    }
+
+    if (!html) html = `<div class="empty">No priority emails right now. Inbox is clean.</div>`;
+    document.getElementById('tab-inbox').innerHTML = html;
+  } catch(e) {
+    document.getElementById('tab-inbox').innerHTML = `<div class="empty">Could not load inbox — check connection.</div>`;
+  }
+}
+
+// ── CALENDAR ──────────────────────────────────────────────────────────
+async function renderCalendar() {
+  document.getElementById('tab-calendar').innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading calendar...</div></div>`;
+  try {
+    const data = await api('/brief', 'POST', { user:'dion' });
+    const events = data.calendar || [];
+    let html = '';
+
+    if (!events.length) {
+      html = `<div class="empty">No events found for today or tomorrow.</div>`;
+    } else {
+      let lastDay = '';
+      events.forEach(ev => {
+        const day = ev.day || '';
+        if (day !== lastDay) {
+          html += `<div class="section-label">${esc(day)}</div>`;
+          lastDay = day;
+        }
+        html += `<div class="card" style="margin-bottom:8px">
+          <div style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+            <div style="min-width:52px;text-align:center">
+              <div style="font-size:15px;font-weight:700;color:var(--blue)">${esc(ev.time||'All day')}</div>
+            </div>
+            <div style="flex:1;min-width:0;border-left:2px solid var(--blue);padding-left:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(ev.subject||ev.title||'')}</div>
+              ${ev.location?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px">📍 ${esc(ev.location)}</div>`:''}
+              ${ev.duration?`<div style="font-size:11px;color:var(--text-hint);margin-top:2px">${esc(ev.duration)}</div>`:''}
+            </div>
+          </div>
+        </div>`;
+      });
+    }
+    document.getElementById('tab-calendar').innerHTML = html;
+  } catch(e) {
+    document.getElementById('tab-calendar').innerHTML = `<div class="empty">Could not load calendar — check connection.</div>`;
+  }
+}
+
+// ── TO-DO ─────────────────────────────────────────────────────────────
+let todos = JSON.parse(localStorage.getItem('jericho:todos') || '[]');
+
+function saveTodos() {
+  localStorage.setItem('jericho:todos', JSON.stringify(todos));
+}
+
+function renderTodos() {
+  const open = todos.filter(t => !t.done);
+  const done = todos.filter(t => t.done);
+  let html = `
+    <div class="section-label">To-Do</div>
+    <div class="card" style="margin-bottom:10px">
+      <div style="padding:12px 16px;display:flex;gap:8px">
+        <input class="field-input" type="text" id="todo-input" placeholder="Add a task..." style="margin:0;flex:1" onkeydown="if(event.key==='Enter')addTodo()">
+        <button class="action-btn primary" onclick="addTodo()" style="white-space:nowrap">Add</button>
+      </div>
+    </div>`;
+
+  if (open.length) {
+    html += `<div class="card" style="margin-bottom:10px">`;
+    open.forEach((t,i) => {
+      const idx = todos.indexOf(t);
+      html += `<div style="padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)">
+        <input type="checkbox" onchange="toggleTodo(${idx})" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
+        <div style="flex:1;font-size:13px;color:var(--text)">${esc(t.text)}</div>
+        <button onclick="deleteTodo(${idx})" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:16px;padding:0 4px">×</button>
+      </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="empty" style="margin-bottom:10px">Nothing on the list. Add something above.</div>`;
+  }
+
+  if (done.length) {
+    html += `<div class="section-label">Done</div><div class="card">`;
+    done.slice(0,5).forEach(t => {
+      const idx = todos.indexOf(t);
+      html += `<div style="padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);opacity:0.5">
+        <input type="checkbox" checked onchange="toggleTodo(${idx})" style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
+        <div style="flex:1;font-size:13px;color:var(--text);text-decoration:line-through">${esc(t.text)}</div>
+        <button onclick="deleteTodo(${idx})" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:16px;padding:0 4px">×</button>
+      </div>`;
+    });
+    html += `<div style="padding:10px 16px;text-align:center"><button class="action-btn" onclick="clearDone()">Clear completed</button></div></div>`;
+  }
+
+  document.getElementById('tab-todos').innerHTML = html;
+}
+
+function addTodo(text) {
+  const input = document.getElementById('todo-input');
+  const t = text || (input && input.value.trim());
+  if (!t) return;
+  todos.unshift({ text: t, done: false, created: Date.now() });
+  saveTodos();
+  if (input) input.value = '';
+  renderTodos();
+  if (!text) toast('Task added ✓');
+  else toast('Added to To-Do ✓');
+}
+
+function toggleTodo(idx) {
+  todos[idx].done = !todos[idx].done;
+  saveTodos();
+  renderTodos();
+}
+
+function deleteTodo(idx) {
+  todos.splice(idx, 1);
+  saveTodos();
+  renderTodos();
+}
+
+function clearDone() {
+  todos = todos.filter(t => !t.done);
+  saveTodos();
+  renderTodos();
+}
+
 function renderScoreboard() {
   const html = `
     <div class="section-label">CEO scoreboard — enter daily</div>
     <div class="card">
       <div class="scorecard-row"><div class="scorecard-label">Cash in bank</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.cash||''}" onchange="scorecardData.cash=this.value"></div>
+      <div class="scorecard-row"><div class="scorecard-label">Revenue (MTD)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.revenue||''}" onchange="scorecardData.revenue=this.value"></div>
+      <div class="scorecard-row"><div class="scorecard-label">Expenses (MTD)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.expenses||''}" onchange="scorecardData.expenses=this.value"></div>
+      <div class="scorecard-row"><div class="scorecard-label">Profit (MTD)</div>
+        <div class="scorecard-input" style="background:var(--surface2);cursor:default;color:${scorecardData.revenue&&scorecardData.expenses?(parseFloat(String(scorecardData.revenue).replace(/[$,]/g,''))-parseFloat(String(scorecardData.expenses).replace(/[$,]/g,''))>=0?'var(--green)':'var(--red)'):'var(--text-muted)'}">
+          ${scorecardData.revenue&&scorecardData.expenses?'$'+(parseFloat(String(scorecardData.revenue).replace(/[$,]/g,''))-parseFloat(String(scorecardData.expenses).replace(/[$,]/g,''))).toLocaleString():'Auto'}
+        </div>
+      </div>
       <div class="scorecard-row"><div class="scorecard-label">A/R aging (overdue)</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.ar||''}" onchange="scorecardData.ar=this.value"></div>
-      <div class="scorecard-row"><div class="scorecard-label">Open proposals</div><input class="scorecard-input" type="text" placeholder="0" value="${scorecardData.proposals||''}" onchange="scorecardData.proposals=this.value"></div>
       <div class="scorecard-row"><div class="scorecard-label">Booked jobs (next 2 wks)</div><input class="scorecard-input" type="text" placeholder="0" value="${scorecardData.booked||''}" onchange="scorecardData.booked=this.value"></div>
       <div class="scorecard-row"><div class="scorecard-label">Signed sales this week</div><input class="scorecard-input" type="text" placeholder="$0" value="${scorecardData.signed||''}" onchange="scorecardData.signed=this.value"></div>
-      <div class="scorecard-row"><div class="scorecard-label">Install capacity used</div><input class="scorecard-input" type="text" placeholder="%" value="${scorecardData.capacity||''}" onchange="scorecardData.capacity=this.value"></div>
+    </div>
+
+    <div class="section-label">A/R — vendors we owe</div>
+    <div id="ar-vendors-container">
+      <div class="loading"><div class="spinner"></div><div style="font-size:13px">Loading vendor balances...</div></div>
     </div>
 
     <div class="section-label">Ask Jericho — business analysis</div>
@@ -1008,6 +1215,43 @@ function renderScoreboard() {
       </div>
     </div>`;
   document.getElementById('tab-scoreboard').innerHTML = html;
+  loadARVendors();
+}
+
+async function loadARVendors() {
+  const container = document.getElementById('ar-vendors-container');
+  if (!container) return;
+  try {
+    const data = await api('/brief', 'POST', { user:'dion' });
+    const payables = data.payables || [];
+    if (!payables.length) {
+      container.innerHTML = `<div class="card"><div class="card-body" style="padding:14px;text-align:center;color:var(--text-muted);font-size:13px">No outstanding vendor balances.</div></div>`;
+      return;
+    }
+    const fmt = n => '$' + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const total = payables.reduce((s,p) => s+(parseFloat(p.amount)||0), 0);
+    let html = `<div class="card">`;
+    payables.forEach(p => {
+      const overdue = p.overdue;
+      html += `<div class="scorecard-row" style="${overdue?'background:var(--red-dim);':''}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--text);font-weight:500">${esc(p.vendor||p.vendorShort||'Unknown')}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.dueDate?'Due: '+p.dueDate:'No due date'}${p.invoiceNum?' · #'+p.invoiceNum:''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;font-weight:600;color:${overdue?'var(--red)':'var(--text)'}">${fmt(p.amount)}</div>
+          ${overdue?'<div style="font-size:10px;color:var(--red);text-transform:uppercase;font-weight:600">Overdue</div>':''}
+        </div>
+      </div>`;
+    });
+    html += `<div class="scorecard-row" style="background:var(--surface2)">
+      <div style="flex:1;font-size:13px;font-weight:600;color:var(--text)">Total owed</div>
+      <div style="font-size:14px;font-weight:700;color:var(--amber)">${fmt(total)}</div>
+    </div></div>`;
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = `<div class="empty">Could not load vendor balances.</div>`;
+  }
 }
 
 async function askBusiness() {
