@@ -1385,6 +1385,11 @@ function renderEmail() {
           </div>
         </div>
 
+        <div style="margin-bottom:16px">
+          <div style="font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-hint);margin-bottom:6px">Key points to include <span style="font-weight:400;text-transform:none;font-size:11px;color:var(--text-hint)">(optional)</span></div>
+          <textarea class="field-input" id="email-points" rows="3" placeholder="e.g. We can do Tuesday, need the PO first, price is firm..."></textarea>
+        </div>
+
         <button class="submit-btn" onclick="generateEmailReply()">Generate Reply</button>
       </div>
     </div>
@@ -1410,6 +1415,7 @@ async function generateEmailReply() {
   const tone = getSelectedOption('tone-options');
   const length = getSelectedOption('length-options');
   const intent = getSelectedOption('intent-options');
+  const keyPoints = document.getElementById('email-points').value.trim();
 
   const container = document.getElementById('email-reply-container');
   container.innerHTML = `<div class="loading"><div class="spinner"></div><div style="font-size:13px">Jericho is drafting your reply...</div></div>`;
@@ -1437,6 +1443,7 @@ INTENT: ${intent}
 
 Always end the reply naturally without a signature — the email client will add one automatically. Never rude, never grovelling.
 
+${keyPoints ? `Key points Dion wants included:\n${keyPoints}\n` : ''}
 Incoming email:
 ${emailText}
 
